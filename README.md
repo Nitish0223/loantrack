@@ -1,8 +1,25 @@
 # LoanTrack
 
+![Docker](https://img.shields.io/badge/Docker-29.8-2496ED?logo=docker&logoColor=white)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-1.37-326CE5?logo=kubernetes&logoColor=white)
+![minikube](https://img.shields.io/badge/minikube-1.39-F7931E?logo=kubernetes&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-22-5FA04E?logo=nodedotjs&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![nginx](https://img.shields.io/badge/nginx-1.27-009639?logo=nginx&logoColor=white)
+![Release](https://img.shields.io/badge/release-v1.1.0-0f172a)
+
 A three-tier loan tracker (static web frontend, Node.js API, PostgreSQL) that runs
 under Docker Compose and on a local Kubernetes cluster (minikube), built with a
 `main` / `develop` / `feature/*` Git workflow.
+
+**Demo video:** _link added after recording_
+
+> **Highlights**
+> - **One command, idempotent:** `./scripts/deploy.sh` takes an empty minikube to a working app in about a minute; running it again changes nothing.
+> - **Zero failed requests during a rolling update and rollback** (78/78 returned 200).
+> - **Self-healing proven:** deleted pods are replaced, and database rows survive deleting the PostgreSQL pod.
+> - **Secure by default:** every container runs as non-root, no credential in code, images or Git history, and the database is never exposed outside the cluster.
+> - **4 real issues debugged and written up** in [ISSUES.md](ISSUES.md) (symptom, diagnosis, root cause, fix).
 
 | Document | Contents |
 |---|---|
@@ -112,40 +129,6 @@ the API to PostgreSQL. **The frontend never touches the database**: it has no
 driver, connection string or credential, only relative `/api/...` calls. Only the
 frontend is reachable from outside; the backend and database are internal only.
 
-<details>
-<summary>Plain-text diagram</summary>
-
-```
-Docker Compose (network "loantrack", only the frontend port is published)
-
-  Browser
-    |  http://localhost:8080
-    v
-  frontend  nginx :8080  -- serves index.html/app.js
-    |  /api/*  (prefix stripped)  ->  http://backend:8080
-    v
-  backend   node :8080   -- GET/POST /loans, /healthz, /readyz
-    |  pg pool  ->  db:5432
-    v
-  db        postgres :5432  -- volume loantrack-pgdata
-
-Kubernetes (namespace "loantrack")
-
-  Browser
-    |  minikube service tunnel  ->  NodePort 30080
-    v
-  Service frontend (NodePort 8080:30080)  ->  Deployment frontend (2 pods, nginx :8080)
-    |  /api/*  ->  backend.loantrack.svc.cluster.local:8080
-    v
-  Service backend (ClusterIP 8080)        ->  Deployment backend (2 pods, node :8080)
-    |  postgres:5432
-    v
-  Service postgres (ClusterIP 5432)       ->  StatefulSet postgres (postgres-0)
-                                                 PVC pgdata-postgres-0 (1Gi)
-```
-
-</details>
-
 ## Run with Docker Compose
 
 ```bash
@@ -241,6 +224,7 @@ docker-compose.yml, .env.example
 - **Secrets:** base64 in a Secret is encoding, not encryption: anyone who can read the Secret or etcd can decode it. In production I would enable etcd encryption at rest (KMS provider), restrict Secret access with RBAC, and source credentials from a secrets manager (Vault or AWS Secrets Manager via External Secrets Operator), or use Sealed Secrets/SOPS when they must live in Git.
 - **Rolling updates:** `maxSurge: 1, maxUnavailable: 0` plus the readiness probe. A user hitting the app mid-rollout gets no errors (78/78 requests returned 200 during rollout and undo), but consecutive requests may be answered by the old or the new version until the rollout finishes.
 - **nginx -> backend DNS:** nginx re-resolves the backend name through the container's DNS (`resolver` + variable `proxy_pass`), so a backend with a new IP is found without restarting nginx (see ISSUES.md). On Kubernetes the backend host is the fully-qualified Service name because nginx's resolver ignores search domains.
+- **Plain YAML + Kustomize instead of Helm:** the assignment allows either, and plain manifests keep every value visible in the file a reviewer reads, with no `{{ .Values }}` templating in between, which also makes live debugging faster. Kustomize only lists the files in apply order. A Helm chart (or Kustomize overlays) pays off once there are several environments with different values; see the roadmap below.
 - **Least privilege:** every container runs as non-root (`node`, `nginx`, `postgres`); backend and frontend drop all Linux capabilities and disallow privilege escalation; the backend root filesystem is read-only.
 
 ## Assumptions
@@ -254,8 +238,65 @@ docker-compose.yml, .env.example
 
 ## What I would do with more time
 
-- A HorizontalPodAutoscaler for the backend (CPU target, min 2 / max 5) with metrics-server.
-- An Ingress with TLS instead of a NodePort.
-- A CI pipeline (GitHub Actions) that builds the images, runs `docker compose up` smoke tests and `kubeconform` on the manifests for every PR.
-- External secrets management (see Design decisions) and a NetworkPolicy so only backend pods may reach PostgreSQL.
-- Prometheus and Grafana for request rate, latency and pod restarts.
+Not built in this assignment (it is scoped to a laptop with no cloud account);
+this is how I would take LoanTrack to production.
+
+```mermaid
+%%{init: {'theme':'base','flowchart':{'nodeSpacing':30,'rankSpacing':45,'padding':16},'themeVariables':{'fontSize':'17px','lineColor':'#64748b','clusterBkg':'#f8fafc','clusterBorder':'#94a3b8'}}}%%
+flowchart LR
+  subgraph ci["🔁 CI · Jenkins"]
+    direction TB
+    gh["🐙 <b>GitHub</b><br/><small>PR merged to main</small>"]:::git
+    jen["🛠️ <b>Jenkins</b><br/><small>Jenkinsfile + Groovy library</small>"]:::ci
+    ecr[("📦 <b>Amazon ECR</b><br/><small>image tagged by SHA</small>")]:::aws
+    gh --> jen --> ecr
+  end
+  subgraph cd["🚀 CD · GitOps"]
+    direction TB
+    chart["⎈ <b>Helm chart</b><br/><small>values per environment</small>"]:::cd
+    argo["🔄 <b>Argo CD</b><br/><small>auto-sync + self-heal</small>"]:::cd
+    chart --> argo
+  end
+  subgraph aws["☁️ AWS · Terraform-provisioned VPC"]
+    direction TB
+    r53["🌍 <b>Route 53</b><br/><small>loantrack.example.com</small>"]:::aws
+    alb["⚖️ <b>ALB + ACM TLS</b><br/><small>Load Balancer Controller</small>"]:::aws
+    eks["☸️ <b>EKS</b><br/><small>frontend + backend pods</small>"]:::k8s
+    rds[("🐘 <b>RDS PostgreSQL</b><br/><small>Multi-AZ, private subnet</small>")]:::data
+    r53 --> alb --> eks --> rds
+  end
+  ci ==>|"bumps image tag in values"| cd
+  cd ==>|"deploys"| aws
+  classDef git fill:#0f172a,stroke:#0f172a,color:#ffffff
+  classDef ci fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a8a
+  classDef cd fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#4c1d95
+  classDef aws fill:#ffedd5,stroke:#ea580c,stroke-width:2px,color:#7c2d12
+  classDef k8s fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#14532d
+  classDef data fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f
+```
+
+### CI: Jenkins
+
+- **Why Jenkins over GitHub Actions:** pipeline steps live in a Groovy shared library that every service reuses, agents run self-hosted inside the VPC so they reach ECR and the cluster through an IAM role with no stored keys, and it is the CI tool many enterprise teams already standardise on.
+- **Trigger:** a GitHub webhook starts a multibranch pipeline, so pull requests get the same checks as merges.
+- **Pipeline stages (declarative `Jenkinsfile`):** checkout, lint and unit tests, `docker build`, Trivy image scan (fails on HIGH/CRITICAL), `kubeconform` / `helm lint`, push to ECR tagged with the commit SHA, then update `image.tag` in the Helm chart's values in Git.
+
+### CD: GitOps with Argo CD and Helm
+
+- The Kubernetes manifests become a **Helm chart** (`charts/loantrack`) with one values file per environment (`values-dev.yaml`, `values-staging.yaml`, `values-prod.yaml`) for replicas, resources, image tags and hostnames.
+- **Argo CD watches the Helm chart in Git**, renders it with the environment's values and syncs it to EKS with auto-sync, self-heal (manual `kubectl` drift is reverted) and pruning.
+- A release is a Git commit that changes `image.tag`; a rollback is `git revert`, so every change to production is reviewed and auditable.
+
+### AWS: EKS, IAM, load balancer and DNS
+
+- **Terraform** for everything: a VPC across 2-3 Availability Zones with public subnets (load balancer) and private subnets (nodes, database), NAT gateways, an **EKS** cluster with managed node groups, and **ECR** repositories.
+- **IAM, least privilege:** IRSA (IAM roles for service accounts) so each pod gets only the AWS permissions it needs (the Load Balancer Controller, external-dns, External Secrets); Jenkins agents use an **IAM role** (instance profile or IRSA), so there are no long-lived access keys; cluster access through EKS access entries mapped to IAM roles.
+- **Load balancer and DNS:** the **AWS Load Balancer Controller** turns a Kubernetes Ingress into an **ALB** with a TLS certificate from **ACM** (HTTP redirected to HTTPS), optionally behind AWS WAF; **external-dns** creates the **Route 53** record (for example `loantrack.example.com`) pointing at the ALB.
+- **Database:** **Amazon RDS for PostgreSQL** (Multi-AZ, automated backups, private subnet, reachable only from the node security group) instead of PostgreSQL in the cluster.
+- **Secrets:** credentials in **AWS Secrets Manager**, synced into Kubernetes Secrets by External Secrets Operator; EKS envelope encryption of Secrets with KMS.
+
+### Reliability and observability
+
+- HorizontalPodAutoscaler for the backend (CPU target, min 2 / max 5) and a PodDisruptionBudget so node upgrades never take all replicas down.
+- NetworkPolicy so only backend pods can reach the database.
+- Prometheus, Grafana and Alertmanager (kube-prometheus-stack) for request rate, latency, error rate and pod restarts, with alerts routed to email or Slack.
