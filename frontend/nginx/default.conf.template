@@ -1,0 +1,37 @@
+# Rendered at container start by the nginx image's entrypoint: envsubst replaces
+# ${BACKEND_HOST} and ${BACKEND_PORT} with environment variables and writes the
+# result to /etc/nginx/conf.d/default.conf. Only variables that are defined in the
+# environment are substituted, so nginx's own $host, $uri etc. are left alone.
+server {
+    # Unprivileged port: the container runs as a non-root user, and only root
+    # may bind to ports below 1024.
+    listen 8080;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Probe target for the frontend container: answers if nginx itself is up.
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    # Reverse proxy to the API. The trailing slash on proxy_pass strips the /api
+    # prefix: the browser's /api/loans becomes http://backend:8080/loans.
+    # BACKEND_HOST is a service name (Docker Compose or Kubernetes DNS), never an IP.
+    location /api/ {
+        proxy_pass http://${BACKEND_HOST}:${BACKEND_PORT}/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_connect_timeout 3s;
+        proxy_read_timeout 10s;
+    }
+
+    # Everything else is the static page.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
