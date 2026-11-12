@@ -18,11 +18,22 @@ server {
         return 200 "ok\n";
     }
 
-    # Reverse proxy to the API. The trailing slash on proxy_pass strips the /api
-    # prefix: the browser's /api/loans becomes http://backend:8080/loans.
-    # BACKEND_HOST is a service name (Docker Compose or Kubernetes DNS), never an IP.
+    # Re-resolve the backend name through the container's DNS server (Docker's
+    # 127.0.0.11 under Compose, kube-dns on Kubernetes) and cache it for 10s.
+    # Without this nginx resolves BACKEND_HOST once at startup and keeps using
+    # that IP, so a restarted backend with a new IP gets 502 Bad Gateway.
+    # NGINX_LOCAL_RESOLVERS is filled in by the image's entrypoint when
+    # NGINX_ENTRYPOINT_LOCAL_RESOLVERS is set (see the Dockerfile).
+    resolver ${NGINX_LOCAL_RESOLVERS} valid=10s ipv6=off;
+
+    # Reverse proxy to the API: /api/loans -> http://backend:8080/loans.
+    # Using a variable in proxy_pass is what makes nginx resolve per request.
+    # With a variable nginx no longer strips the /api prefix itself, so the
+    # rewrite removes it. BACKEND_HOST is a service name, never an IP.
     location /api/ {
-        proxy_pass http://${BACKEND_HOST}:${BACKEND_PORT}/;
+        set $backend_upstream http://${BACKEND_HOST}:${BACKEND_PORT};
+        rewrite ^/api/(.*)$ /$1 break;
+        proxy_pass $backend_upstream;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

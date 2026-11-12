@@ -1,0 +1,71 @@
+# LoanTrack: frontend (nginx) -> backend (node) -> db (postgres)
+#   cp .env.example .env && docker compose up -d   ->   http://localhost:8080
+#
+# ${VAR} values are read from the git-ignored .env file next to this file.
+name: loantrack
+
+services:
+  db:
+    build: ./db
+    image: loantrack-db:1.0.0
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      # Named volume: data survives `docker compose down` / `up`.
+      # Only `docker compose down -v` deletes it.
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - loantrack
+    # No ports published: the database is reachable only inside the network.
+    healthcheck:
+      # $$ escapes $ for compose, so the shell inside the container expands it.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    image: loantrack-backend:1.0.0
+    environment:
+      # "db" is the service name; compose's DNS resolves it on the network.
+      PGHOST: db
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      PORT: "8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - loantrack
+    # Not published either: the browser reaches it only through the frontend.
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    image: loantrack-frontend:1.0.0
+    environment:
+      BACKEND_HOST: backend
+      BACKEND_PORT: "8080"
+    ports:
+      - "${FRONTEND_PORT:-8080}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - loantrack
+    restart: unless-stopped
+
+networks:
+  loantrack:
+    name: loantrack
+
+volumes:
+  pgdata:
+    name: loantrack-pgdata
