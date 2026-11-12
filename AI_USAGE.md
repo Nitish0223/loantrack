@@ -1,10 +1,9 @@
 # AI usage
 
 Tool: **Claude Code** (Anthropic, Claude Opus model) running in my terminal on the
-project folder. It drafted most files, ran builds and tests in my shell, and helped
-with the GitHub workflow. I directed the work part by part, reviewed every file before
-its PR, opened and merged the PRs, and asked for each line to be explained so I can
-defend it.
+project folder. It drafted most files, ran builds and tests in my shell. 
+I directed the work part by part, reviewed every file before
+its PR, opened and merged the PRs .
 
 | Task | Tool | Accepted as-is | Changed, and why |
 |---|---|---|---|
