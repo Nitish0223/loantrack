@@ -5,7 +5,8 @@
 # BuildKit to run this stage (BuildKit skips stages the final image never uses).
 FROM nginxinc/nginx-unprivileged:1.27.3-alpine AS config-check
 COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
-RUN BACKEND_HOST=localhost BACKEND_PORT=8080 /docker-entrypoint.sh nginx -t \
+RUN BACKEND_HOST=localhost BACKEND_PORT=8080 NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1 \
+    /docker-entrypoint.sh nginx -t \
  && echo "nginx config validated at build time" > /tmp/nginx-config-ok
 
 # ---- Stage 2: runtime ---------------------------------------------------------
@@ -14,8 +15,11 @@ RUN BACKEND_HOST=localhost BACKEND_PORT=8080 /docker-entrypoint.sh nginx -t \
 FROM nginxinc/nginx-unprivileged:1.27.3-alpine AS runtime
 
 # Default to the Compose service name; Kubernetes overrides it via a ConfigMap.
+# NGINX_ENTRYPOINT_LOCAL_RESOLVERS makes the entrypoint read the DNS server
+# from /etc/resolv.conf into NGINX_LOCAL_RESOLVERS for the resolver directive.
 ENV BACKEND_HOST=backend \
-    BACKEND_PORT=8080
+    BACKEND_PORT=8080 \
+    NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
 
 # The image's entrypoint runs envsubst on /etc/nginx/templates/*.template at
 # start-up and writes /etc/nginx/conf.d/default.conf.
