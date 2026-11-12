@@ -1,0 +1,3 @@
+# Store and check out every text file with LF line endings, even on Windows.
+# Files run inside Linux containers (shell scripts, SQL, configs) break with CRLF.
+* text=auto eol=lf
