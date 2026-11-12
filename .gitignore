@@ -1,0 +1,7 @@
+# Dependencies
+node_modules/
+
+# Secrets: real env files are never committed, only .env.example is
+.env
+.env.*
+!.env.example
