@@ -6,9 +6,16 @@ Long outputs are trimmed with `...`; nothing else is edited.
 
 ## Screenshots
 
-| Docker Compose | Kubernetes (minikube) |
+| Docker Compose (`http://localhost:8080`) | Kubernetes (minikube service URL) |
 |---|---|
 | ![LoanTrack under Docker Compose](docs/screenshots/docker-ui.png) | ![LoanTrack on Kubernetes](docs/screenshots/k8s-ui.png) |
+| Served by `6a65debaed5a`: the Compose backend container ID | Served by `backend-75664d48f9-s2npr`: a Kubernetes pod name |
+
+Terminal captures of the two start-up commands (the same output is pasted as text below):
+
+| `docker compose up -d` | `minikube service frontend -n loantrack --url` |
+|---|---|
+| ![docker compose up](docs/screenshots/docker-compose-up.png) | ![minikube service](docs/screenshots/k8s-minikube-service.png) |
 
 ---
 
