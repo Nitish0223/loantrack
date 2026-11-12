@@ -26,6 +26,95 @@ under Docker Compose and on a local Kubernetes cluster (minikube), built with a
 
 ## Architecture
 
+### Docker Compose
+
+```mermaid
+%%{init: {'theme':'base','flowchart':{'nodeSpacing':40,'rankSpacing':70,'padding':18},'themeVariables':{'fontSize':'19px','lineColor':'#64748b','clusterBkg':'#f8fafc','clusterBorder':'#94a3b8'}}}%%
+flowchart LR
+  user(["🌐 <b>Browser</b>"]):::client
+  subgraph net["🐳 Docker network · loantrack"]
+    direction LR
+    fe["🖥️ <b>frontend</b><br/><small>nginx · :8080</small>"]:::web
+    be["⚙️ <b>backend</b><br/><small>Node.js API · :8080</small>"]:::api
+    db[("🐘 <b>db</b><br/><small>PostgreSQL · :5432</small>")]:::data
+  end
+  vol[("💾 <b>pgdata</b><br/><small>named volume</small>")]:::store
+  user ==>|"localhost:8080"| fe
+  fe ==>|"/api/*"| be
+  be ==>|"pg pool"| db
+  db -.- vol
+  classDef client fill:#0f172a,stroke:#0f172a,color:#ffffff
+  classDef web fill:#dbeafe,stroke:#2563eb,stroke-width:3px,color:#1e3a8a
+  classDef api fill:#dcfce7,stroke:#16a34a,stroke-width:3px,color:#14532d
+  classDef data fill:#ffedd5,stroke:#ea580c,stroke-width:3px,color:#7c2d12
+  classDef store fill:#f1f5f9,stroke:#64748b,stroke-width:2px,stroke-dasharray:5 4,color:#334155
+  linkStyle 0,1,2 stroke:#475569,stroke-width:3px
+```
+
+### Kubernetes (minikube)
+
+```mermaid
+%%{init: {'theme':'base','flowchart':{'nodeSpacing':30,'rankSpacing':45,'padding':16},'themeVariables':{'fontSize':'18px','lineColor':'#64748b','clusterBkg':'#faf5ff','clusterBorder':'#7c3aed'}}}%%
+flowchart LR
+  user(["🌐 <b>Browser</b><br/><small>minikube service</small>"]):::client
+  subgraph ns["☸️ minikube · namespace loantrack"]
+    direction LR
+    subgraph t1["🖥️ Frontend tier"]
+      direction TB
+      fsvc{{"🔌 <b>Service</b><br/><small>NodePort 30080</small>"}}:::svc
+      fe["<b>Deployment</b><br/><small>2 × nginx :8080</small>"]:::web
+      fsvc ==> fe
+    end
+    subgraph t2["⚙️ API tier"]
+      direction TB
+      bsvc{{"🔌 <b>Service</b><br/><small>ClusterIP :8080</small>"}}:::svc
+      be["<b>Deployment</b><br/><small>2 × Node.js :8080</small>"]:::api
+      cfg["🔐 <b>ConfigMap + Secret</b><br/><small>env only</small>"]:::cfg
+      bsvc ==> be
+      cfg -.-> be
+    end
+    subgraph t3["🐘 Data tier"]
+      direction TB
+      psvc{{"🔌 <b>Service</b><br/><small>ClusterIP :5432</small>"}}:::svc
+      db[("<b>StatefulSet</b><br/><small>postgres-0 :5432</small>")]:::data
+      pvc[("💾 <b>PVC</b><br/><small>pgdata-postgres-0 · 1Gi</small>")]:::store
+      psvc ==> db
+      db -.- pvc
+    end
+  end
+  user ==> t1
+  t1 ==>|"/api/*"| t2
+  t2 ==>|"pg pool"| t3
+  classDef client fill:#0f172a,stroke:#0f172a,color:#ffffff
+  classDef svc fill:#ede9fe,stroke:#7c3aed,stroke-width:3px,color:#4c1d95
+  classDef web fill:#dbeafe,stroke:#2563eb,stroke-width:3px,color:#1e3a8a
+  classDef api fill:#dcfce7,stroke:#16a34a,stroke-width:3px,color:#14532d
+  classDef data fill:#ffedd5,stroke:#ea580c,stroke-width:3px,color:#7c2d12
+  classDef store fill:#f1f5f9,stroke:#64748b,stroke-width:2px,stroke-dasharray:5 4,color:#334155
+  classDef cfg fill:#f8fafc,stroke:#94a3b8,stroke-width:2px,stroke-dasharray:5 4,color:#334155
+  style t1 fill:#eff6ff,stroke:#93c5fd,stroke-width:2px
+  style t2 fill:#f0fdf4,stroke:#86efac,stroke-width:2px
+  style t3 fill:#fff7ed,stroke:#fdba74,stroke-width:2px
+  linkStyle 0,1,3,5,6,7 stroke:#475569,stroke-width:3px
+```
+
+### Request path
+
+| Step | From → to | Docker Compose | Kubernetes | Port |
+|---|---|---|---|---|
+| 1 | Browser → frontend (nginx) | `http://localhost:8080` | `minikube service frontend -n loantrack --url` → NodePort `30080` | 8080 |
+| 2 | frontend → backend | nginx proxies `/api/*` (prefix stripped) to `backend:8080` | to `backend.loantrack.svc.cluster.local:8080` (ClusterIP) | 8080 |
+| 3 | backend → database | pg connection pool to `db:5432` | pg connection pool to `postgres:5432` (ClusterIP) | 5432 |
+| 4 | database → disk | named volume `loantrack-pgdata` | PVC `pgdata-postgres-0` (1Gi) | – |
+
+Traffic only flows in one direction: the browser talks to nginx, nginx to the API,
+the API to PostgreSQL. **The frontend never touches the database**: it has no
+driver, connection string or credential, only relative `/api/...` calls. Only the
+frontend is reachable from outside; the backend and database are internal only.
+
+<details>
+<summary>Plain-text diagram</summary>
+
 ```
 Docker Compose (network "loantrack", only the frontend port is published)
 
@@ -55,9 +144,7 @@ Kubernetes (namespace "loantrack")
                                                  PVC pgdata-postgres-0 (1Gi)
 ```
 
-Traffic only flows top to bottom: the browser talks to nginx, nginx to the API,
-the API to PostgreSQL. **The frontend never touches the database**: it has no
-driver, connection string or credential, only relative `/api/...` calls.
+</details>
 
 ## Run with Docker Compose
 
