@@ -14,8 +14,11 @@ RUN npm ci --omit=dev
 
 # ---- Stage 2: runtime image --------------------------------------------------
 FROM node:22.12.0-alpine3.21 AS runtime
+# Version label reported by the API: docker build --build-arg APP_VERSION=v2
+ARG APP_VERSION=v1
 ENV NODE_ENV=production \
-    PORT=8080
+    PORT=8080 \
+    APP_VERSION=${APP_VERSION}
 WORKDIR /app
 
 # Only the installed node_modules come over from stage 1, owned by the
