@@ -82,8 +82,10 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 2
             failureThreshold: 2
-          # Liveness -> /healthz (process only, no DB). Slower and more tolerant:
-          # restart only after ~30s of no HTTP answer, i.e. the process is hung.
+          # Liveness -> /healthz (process only, no DB). Deliberately tolerant:
+          # restart only after ~60s (6 x 10s, 5s timeout each) of no HTTP answer,
+          # i.e. the process is really hung. A short node-wide CPU stall once made
+          # a 3 x 10s / 2s liveness probe kill healthy pods (see ISSUES.md).
           # A database outage never restarts the API.
           livenessProbe:
             httpGet:
@@ -91,8 +93,8 @@ spec:
               port: http
             initialDelaySeconds: 10
             periodSeconds: 10
-            timeoutSeconds: 2
-            failureThreshold: 3
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
             requests:
               cpu: 100m
