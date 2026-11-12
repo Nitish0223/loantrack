@@ -277,7 +277,7 @@ flowchart LR
 
 ### CI: Jenkins
 
-- **Why Jenkins over GitHub Actions:** pipeline steps live in a Groovy shared library that every service reuses, agents run self-hosted inside the VPC so they reach ECR and the cluster through an IAM role with no stored keys, and it is the CI tool many enterprise teams already standardise on.
+- **Why Jenkins:** I have built Jenkins pipelines before (declarative `Jenkinsfile` with a Groovy shared library), so it is the CI tool I would use here. Shared library steps can be reused across services, and self-hosted agents inside the VPC reach ECR and the cluster through an IAM role with no stored keys.
 - **Trigger:** a GitHub webhook starts a multibranch pipeline, so pull requests get the same checks as merges.
 - **Pipeline stages (declarative `Jenkinsfile`):** checkout, lint and unit tests, `docker build`, Trivy image scan (fails on HIGH/CRITICAL), `kubeconform` / `helm lint`, push to ECR tagged with the commit SHA, then update `image.tag` in the Helm chart's values in Git.
 
