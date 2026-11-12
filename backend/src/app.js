@@ -9,8 +9,13 @@ app.use(express.json());
 // pod name, so with 3 replicas you can see which pod answered each request.
 const POD_NAME = process.env.HOSTNAME || os.hostname();
 
+// Image version, baked in at build time (Dockerfile ARG APP_VERSION). Shown in
+// every response so a rolling update and its rollback are visible per request.
+const APP_VERSION = process.env.APP_VERSION || 'dev';
+
 app.use((req, res, next) => {
   res.set('X-Served-By', POD_NAME);
+  res.set('X-App-Version', APP_VERSION);
   next();
 });
 
@@ -42,7 +47,7 @@ app.get('/loans', async (req, res, next) => {
          FROM loans
         ORDER BY id`,
     );
-    res.json({ pod: POD_NAME, count: rows.length, loans: rows });
+    res.json({ pod: POD_NAME, version: APP_VERSION, count: rows.length, loans: rows });
   } catch (err) {
     next(err);
   }
