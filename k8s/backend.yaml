@@ -1,0 +1,107 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: loantrack
+  labels:
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/part-of: loantrack
+spec:
+  # Internal only: the browser reaches the API through the frontend's nginx.
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: backend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: loantrack
+  labels:
+    app.kubernetes.io/name: backend
+    app.kubernetes.io/part-of: loantrack
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Start one extra new pod, and never take an old pod away before a new
+      # one is Ready: capacity never drops during a rollout.
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: backend
+        app.kubernetes.io/part-of: loantrack
+    spec:
+      # Matches the 10s drain window in server.js's SIGTERM handler.
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000   # the "node" user from the image
+        runAsGroup: 1000
+      containers:
+        - name: backend
+          image: loantrack-backend:1.0.0
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8080
+          # Non-secret settings (PGHOST, PGPORT, PGDATABASE, PORT, ...) from the ConfigMap.
+          envFrom:
+            - configMapRef:
+                name: loantrack-config
+          # Credentials only by reference to the Secret, never as literals here.
+          env:
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: loantrack-db-secret
+                  key: POSTGRES_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: loantrack-db-secret
+                  key: POSTGRES_PASSWORD
+          # Readiness -> /readyz (checks the DB). Fails fast: out of the Service
+          # after 2 misses (~10s), so no traffic goes to a pod that cannot reach
+          # postgres. The pod is NOT restarted for this.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+          # Liveness -> /healthz (process only, no DB). Slower and more tolerant:
+          # restart only after ~30s of no HTTP answer, i.e. the process is hung.
+          # A database outage never restarts the API.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

@@ -1,0 +1,7 @@
+# Everything LoanTrack creates lives in this namespace, never in "default".
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: loantrack
+  labels:
+    app.kubernetes.io/part-of: loantrack

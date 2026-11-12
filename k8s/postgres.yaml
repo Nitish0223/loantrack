@@ -1,0 +1,116 @@
+# PostgreSQL as a StatefulSet: a stable pod name (postgres-0) and a PVC created
+# from volumeClaimTemplates that stays bound to that pod across deletes and
+# rescheduling. A Deployment + PVC would also work for one replica, but a
+# StatefulSet expresses "this pod owns this disk" directly.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: loantrack
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: loantrack
+spec:
+  # ClusterIP: reachable only from inside the cluster, never from outside.
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: loantrack
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/part-of: loantrack
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+        app.kubernetes.io/part-of: loantrack
+    spec:
+      securityContext:
+        # Same non-root postgres user (uid 70) as the image's USER.
+        runAsUser: 70
+        runAsGroup: 70
+        runAsNonRoot: true
+        # The PVC is mounted with group 70 so postgres can write to it.
+        fsGroup: 70
+      containers:
+        - name: postgres
+          image: loantrack-db:1.0.0
+          # Images are loaded into minikube locally; never pull from a registry.
+          imagePullPolicy: Never
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: loantrack-db-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: loantrack-db-secret
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: loantrack-config
+                  key: POSTGRES_DB
+            # Data in a subdirectory of the mount: initdb refuses a non-empty
+            # directory, and some volumes contain a lost+found folder at the root.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+          # Ready when postgres accepts connections. On first start initdb and
+          # the seed scripts run before that, hence the initial delay.
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -h 127.0.0.1"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Restart only if postgres stays unresponsive for ~1 minute: a busy
+          # database should be taken out of rotation, not killed.
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" -h 127.0.0.1"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdata
+        labels:
+          app.kubernetes.io/name: postgres
+          app.kubernetes.io/part-of: loantrack
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

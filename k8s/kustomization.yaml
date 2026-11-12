@@ -1,0 +1,11 @@
+# kubectl apply -k k8s/   applies these in order.
+# secret.example.yaml is intentionally NOT listed: the real Secret is created
+# from .env by scripts/deploy.sh (or by hand), never from a committed file.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - postgres.yaml
+  - backend.yaml
+  - frontend.yaml
