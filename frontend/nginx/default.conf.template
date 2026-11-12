@@ -1,0 +1,48 @@
+# Rendered at container start by the nginx image's entrypoint: envsubst replaces
+# ${BACKEND_HOST} and ${BACKEND_PORT} with environment variables and writes the
+# result to /etc/nginx/conf.d/default.conf. Only variables that are defined in the
+# environment are substituted, so nginx's own $host, $uri etc. are left alone.
+server {
+    # Unprivileged port: the container runs as a non-root user, and only root
+    # may bind to ports below 1024.
+    listen 8080;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Probe target for the frontend container: answers if nginx itself is up.
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    # Re-resolve the backend name through the container's DNS server (Docker's
+    # 127.0.0.11 under Compose, kube-dns on Kubernetes) and cache it for 10s.
+    # Without this nginx resolves BACKEND_HOST once at startup and keeps using
+    # that IP, so a restarted backend with a new IP gets 502 Bad Gateway.
+    # NGINX_LOCAL_RESOLVERS is filled in by the image's entrypoint when
+    # NGINX_ENTRYPOINT_LOCAL_RESOLVERS is set (see the Dockerfile).
+    resolver ${NGINX_LOCAL_RESOLVERS} valid=10s ipv6=off;
+
+    # Reverse proxy to the API: /api/loans -> http://backend:8080/loans.
+    # Using a variable in proxy_pass is what makes nginx resolve per request.
+    # With a variable nginx no longer strips the /api prefix itself, so the
+    # rewrite removes it. BACKEND_HOST is a service name, never an IP.
+    location /api/ {
+        set $backend_upstream http://${BACKEND_HOST}:${BACKEND_PORT};
+        rewrite ^/api/(.*)$ /$1 break;
+        proxy_pass $backend_upstream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_connect_timeout 3s;
+        proxy_read_timeout 10s;
+    }
+
+    # Everything else is the static page.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

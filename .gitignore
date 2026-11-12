@@ -5,3 +5,15 @@ node_modules/
 .env
 .env.*
 !.env.example
+
+# Kubernetes: only secret.example.yaml (dummy values) is committed
+k8s/secret.yaml
+
+# Build output and logs
+dist/
+build/
+*.log
+
+# Local database data, in case postgres is ever bind-mounted to a folder
+pgdata/
+data/

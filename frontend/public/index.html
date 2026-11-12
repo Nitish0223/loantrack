@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LoanTrack</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>LoanTrack</h1>
+    <p class="meta">Served by API pod: <code id="pod">-</code></p>
+  </header>
+
+  <main>
+    <section>
+      <h2>Add a loan</h2>
+      <form id="loan-form">
+        <label>Borrower name
+          <input name="borrower_name" required maxlength="100">
+        </label>
+        <label>Loan amount
+          <input name="loan_amount" type="number" min="1" step="0.01" required>
+        </label>
+        <label>Property city
+          <input name="property_city" maxlength="100">
+        </label>
+        <button type="submit">Add loan</button>
+        <p id="form-message" role="status"></p>
+      </form>
+    </section>
+
+    <section>
+      <h2>Loans <span id="count"></span></h2>
+      <p id="error" class="error" role="alert" hidden></p>
+      <table>
+        <thead>
+          <tr><th>ID</th><th>Borrower</th><th>Amount</th><th>City</th><th>Status</th><th>Created</th></tr>
+        </thead>
+        <tbody id="loans"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
