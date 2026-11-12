@@ -1,0 +1,24 @@
+# Non-sensitive settings only. Credentials live in the loantrack-db-secret Secret.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loantrack-config
+  namespace: loantrack
+  labels:
+    app.kubernetes.io/part-of: loantrack
+data:
+  # Backend -> database. "postgres" is the Service name; the pod's resolv.conf
+  # search list expands it to postgres.loantrack.svc.cluster.local.
+  PGHOST: postgres
+  PGPORT: "5432"
+  PGDATABASE: loantrack
+  # Also read by the postgres container to name the database it creates.
+  POSTGRES_DB: loantrack
+  PORT: "8080"
+  DB_POOL_MAX: "10"
+
+  # Frontend (nginx) -> backend. Fully-qualified on purpose: nginx's own
+  # resolver does not apply resolv.conf search domains, so the short name
+  # "backend" would not resolve from inside nginx.
+  BACKEND_HOST: backend.loantrack.svc.cluster.local
+  BACKEND_PORT: "8080"
