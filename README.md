@@ -12,7 +12,7 @@ A three-tier loan tracker (static web frontend, Node.js API, PostgreSQL) that ru
 under Docker Compose and on a local Kubernetes cluster (minikube), built with a
 `main` / `develop` / `feature/*` Git workflow.
 
-**Demo video:** _link added after recording_
+**Demo video:** [Watch the walkthrough on Google Drive](https://drive.google.com/file/d/12fcwBchqZxvjWqeMqO7Sy4LgxnvPW0Yr/view?usp=sharing) - Docker Compose, a live `deploy.sh` run on minikube, and the Postgres pod deleted to show the data survives.
 
 > **Highlights**
 > - **One command, idempotent:** `./scripts/deploy.sh` takes an empty minikube to a working app in about a minute; running it again changes nothing.
